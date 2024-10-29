@@ -1,0 +1,441 @@
+<html>
+
+<head>
+  <title>Texture Mapping</title>
+  <script src="three.min.js"></script>
+  <script src="GLTFLoader.js"></script>
+  <script src="KeyboardState.js"></script>
+
+  <!--Adapted from the blog post:
+http://solutiondesign.com/blog/-/blogs/webgl-and-three-js-texture-mappi-1/-->
+
+  <script>
+    var myscene, scene, camera, renderer; // Three.js rendering basics.
+
+    var canvas; // The canvas on which the image is rendered.
+
+    var keyboard = new KeyboardState();
+
+    var duckie, duckie1, duckie2;
+
+    var spheres;
+
+    var lhelp, rhelp, whelp;
+
+    var duckieHelper, duckiebox, sceneColliders = [];
+
+    var spheres = [];
+
+    var gameTime = 0;
+
+    var gameState = true;
+
+    var gamePoints = 0;
+
+    var collisions = 0;
+
+    // object used to register and check for collisions
+    function Collider(obj, static = false) {
+      this.obj = obj;
+      this.box = new THREE.Box3();
+      this.static = static;
+      if (static) {
+        this.box.setFromObject(obj);
+        this.check = checkStatic;
+      } else {
+        this.check = checkDynamic;
+      }
+    }
+
+    // checks collisions for an unmoving object
+    function checkStatic(box) {
+      return box.intersectsBox(this.box);
+    }
+
+    // checks collisions for a moving object
+    function checkDynamic(box) {
+      this.box.setFromObject(this.obj);
+      return box.intersectsBox(this.box);
+    }
+
+    // checks scene for collisions between colliders and obj
+    function checkCollisions(obj) {
+      let isCollision = false;
+      for (var i = 0; !isCollision && (i < sceneColliders.length); i++) {
+        isCollision = sceneColliders[i].check(obj);
+      }
+      return isCollision;
+    }
+    // from https://threejsfundamentals.org/threejs/lessons/threejs-load-obj.html
+    function frameArea(sizeToFitOnScreen, boxSize, boxCenter, camera) {
+      const halfSizeToFitOnScreen = sizeToFitOnScreen * 0.5;
+      const halfFovY = THREE.MathUtils.degToRad(camera.fov * .5);
+      const distance = halfSizeToFitOnScreen / Math.tan(halfFovY);
+
+      // compute a unit vector that points in the direction the camera is now
+      // from the center of the box
+      const direction = (new THREE.Vector3()).subVectors(camera.position, boxCenter).normalize();
+
+      // move the camera to a position distance units way from the center
+      // in whatever direction the camera was from the center already
+      camera.position.copy(direction.multiplyScalar(distance).add(boxCenter));
+
+      // pick some near and far values for the frustum that
+      // will contain the box.
+      camera.near = boxSize / 100;
+      camera.far = boxSize * 100;
+
+      camera.updateProjectionMatrix();
+
+      // point the camera to look at the center of the box
+      camera.lookAt(boxCenter.x, boxCenter.y, boxCenter.z);
+    }
+
+    // Create the scene. This function is called once, as soon as the page loads.
+    // The renderer has already been created before this function is called.
+    function createWorld() {
+
+      renderer.setClearColor(0); // Set background color (0, or 0x000000, is black).
+      myscene = new THREE.Scene(); // Create a new scene which we can add objects to.
+      scene = new THREE.Object3D();
+      myscene.add(scene);
+
+      // create a camera, sitting on the positive z-axis.  The camera is not part of the scene.
+      camera = new THREE.PerspectiveCamera(60, canvas.width / canvas.height, 1, 5000);
+      // camera position will be set later after duckie loads
+
+      var ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambientLight);
+
+      var light = new THREE.DirectionalLight(0xffffff, 1);
+      light.position.set(1, 1, 1);
+      scene.add(light);
+
+      var tex_loader = new THREE.TextureLoader();
+      var floor_geom = new THREE.PlaneGeometry(15, 15);
+      var water = tex_loader.load("water.jpg");
+      var marble = tex_loader.load("marble.jpg");
+
+      var wall1geo = new THREE.BoxGeometry(10, 3, 1);
+      var wall2geo = new THREE.BoxGeometry(10, 3, 1);
+      var wall3geo = new THREE.BoxGeometry(3, 10, 1);
+
+      marble.wrapS = THREE.RepeatWrapping;
+      marble.wrapT = THREE.RepeatWrapping;
+      marble.repeat.set(1, 0.25);
+      var wall_material = new THREE.MeshPhongMaterial({map: marble, side: THREE.DoubleSide});
+      var water_material = new THREE.MeshPhongMaterial({map: water, side: THREE.DoubleSide});
+
+      water_material.bumpMap = tex_loader.load("water_bump.png");
+      water_material.bumpScale = .25;
+
+      wall_middle = new THREE.Mesh(wall1geo, wall_material);
+      wall_middle.position.set(0, -3.75, -4.5)
+      wall_middle.scale.set(3.5, 4, 3);
+
+      // fix
+      wall_left = new THREE.Mesh(wall2geo, wall_material);
+      wall_left.rotation.y = 1.5
+      wall_left.position.set(-17, -3.75, 12)
+      wall_left.scale.set(3.5, 4, 3);
+
+      wall_right = new THREE.Mesh(wall2geo, wall_material);
+      wall_right.rotation.y = -1.5
+      wall_right.position.set(17, -3.75, 12)
+      wall_right.scale.set(3.5, 4, 3);
+
+      scene.add(wall_right);
+
+      scene.add(wall_left);
+
+      scene.add(wall_middle);
+
+      bathwater = new THREE.Mesh(floor_geom, water_material);
+      bathwater.position.y = -3
+      bathwater.position.z = 6
+      bathwater.rotation.x = 1.5
+      bathwater.scale.set(2, 1.5, 3);
+      //floor.rotation.z = .75
+      scene.add(bathwater);
+
+      //floor
+      var floor_geometry = new THREE.PlaneGeometry(300, 225);
+      var floory = tex_loader.load("tiles.jpg");
+      var floor_mat = new THREE.MeshPhongMaterial({map: floory, side: THREE.DoubleSide});
+      floor_mat.bumpMap = tex_loader.load("tiles_bump.png");
+      floor_mat.bumpScale = 15;
+
+      floor = new THREE.Mesh(floor_geometry, floor_mat);
+      floor.position.y = -3
+      floor.position.z = 40
+      floor.rotation.x = 1.5
+      floor.scale.set(1, 1, 3);
+      scene.add(floor);
+
+      // wall
+      var back_geo = new THREE.PlaneGeometry(50, 50);
+      var back_text = tex_loader.load("wall.jpg");
+      var back_mat = new THREE.MeshPhongMaterial({map: back_text, side: THREE.DoubleSide});
+      wall = new THREE.Mesh(back_geo, back_mat);
+      wall.position.set(0, 0, -45);
+      wall.scale.set(3.5, 4, 3);
+      scene.add(wall);
+
+      // Instantiate a loader
+      var loader = new THREE.GLTFLoader();
+
+      // Load a glTF resource
+      loader.load(
+        'duck.glb',
+        // function below is called when the resource is loaded
+        function (gltf) {
+          duckie = gltf.scene;  // search through the loaded file for the object we want
+          scene.add(duckie);
+          duckie.rotation.set(0, 0, 0);
+          duckie.scale.set(5, 5, 5); // Adjust the values as needed
+          duckie.position.z = 3;
+          duckie.position.y = -1;
+
+          // set camera parameters to look at object we just loaded
+          // (this will override anything you set before)
+          // from https://threejsfundamentals.org/threejs/lessons/threejs-load-obj.html
+          const box = new THREE.Box3().setFromObject(duckie);
+          const boxSize = box.getSize(new THREE.Vector3()).length();
+          const boxCenter = box.getCenter(new THREE.Vector3());
+          console.log(boxSize);
+          //console.log(boxCenter);
+
+          camera.position.set(0, 15, 20);
+          camera.rotation.x = -Math.PI / 5;
+
+          // compute bounding box of duckie 
+          duckieBox = new THREE.Box3();
+          duckieBox.setFromObject(duckie);
+          console.log(duckieBox);
+
+          // UNCOMMENT TO SHOW BOUNDING BOXES
+          //duckieHelper = new THREE.BoxHelper(duckie, "red");
+          //scene.add(duckieHelper);
+
+          // Create some initial spheres
+          for (var i = 0; i < 3; i++) {
+            createSphere();
+          }
+          requestAnimationFrame(render);  // we don't want to start rendering until the model is loaded
+        },
+
+        // called while loading is progressing
+        function (xhr) {
+          console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+        },
+
+        // called when loading has errors
+        function (error) {
+          console.log('An error happened');
+        }
+      );
+      // Load the first duck model
+      loader.load('duck.glb', function (gltf) {
+        duckie1 = gltf.scene;
+        scene.add(duckie1);
+        duckie1.position.set(.45, -1, 0);
+        duckie1.scale.set(1 / 2, 1 / 2, 1 / 2);
+        duckie.add(duckie1);
+      });
+
+      // Load the second duck model
+      loader.load('duck.glb', function (gltf) {
+        duckie2 = gltf.scene;
+        scene.add(duckie2);
+        duckie2.position.set(-.45, -1, 0);
+        duckie2.scale.set(1 / 2, 1 / 2, 1 / 2);
+        duckie.add(duckie2);
+      });
+    }
+    const speed = 0.4;
+
+    function updateAnimation() {
+      if (gameState) {
+        gameTime += .0001;
+        // scan keyboard
+        keyboard.update();
+        for (var i = 0; i < spheres.length; i++) {
+          var sphere = spheres[i];
+          // Move the sphere downwards
+          sphere.position.y -= 0.1 + gameTime;
+
+          // Reset position if sphere goes below a certain height
+          if (sphere.position.y < -2) {
+            sphere.position.set(
+              Math.random() * (12 - (-13) + 1) + (-13),
+              30,
+              Math.random() * (8 - (-2) + 1) + (-2)
+            );
+            gamePoints += 1;
+          }
+          sceneColliders[i].box.setFromObject(sphere);
+          document.getElementById("points").innerText = gamePoints / 3;
+        }
+        // little bounce in the water
+        duckie.position.y = -0.5 + .25 * Math.abs(Math.sin(gameTime * 300));
+        duckie1.position.y = -.3 + .1 * Math.abs(Math.sin(gameTime * 250));
+        duckie2.position.y = -.3 + .1 * Math.abs(Math.sin(gameTime * 250));
+        // console.log(gamePoints/3);
+        // check for collision
+        //let isCollision = checkCollisions(duckieBox)
+
+        // current position
+        var oldX = duckie.position.x;
+        var oldY = duckie.position.y;
+        var oldZ = duckie.position.z;
+        var newX = oldX, newY = oldY, newZ = oldZ;
+
+        // figure out requested movement
+        if (keyboard.pressed('W') || keyboard.pressed("up")) {
+          // move forward
+          newZ = oldZ - speed;
+        } else if (keyboard.pressed('S') || keyboard.pressed("down")) {
+          // move backward
+          newZ = oldZ + speed;
+        }
+        if (keyboard.pressed('A') || keyboard.pressed("left")) {
+          // move left
+          newX = oldX - speed;
+        } else if (keyboard.pressed('D') || keyboard.pressed("right")) {
+          // move backward
+          newX = oldX + speed;
+        }
+        if (keyboard.pressed('Q') || keyboard.pressed("[")) {
+          // move up
+          newY = oldY + speed;
+        } else if (keyboard.pressed('E') || keyboard.pressed("]")) {
+          // move down
+          newY = oldY - speed;
+        }
+        if (keyboard.pressed('R')) {
+          // reset
+          newX = 0;
+          newY = 0;
+          newZ = 10;
+        }
+        // apply requested movement
+        if (isValidPosition(newX, newY, newZ)) {
+          duckie.position.x = newX;
+          duckie.position.y = newY;
+          duckie.position.z = newZ;
+          duckieBox.setFromObject(duckie); // account for the new position
+          if (duckieHelper) {
+            duckieHelper.update();
+          }
+        }
+
+        // check for collision
+        let isCollision = checkCollisions(duckieBox)
+
+        // undo requested movement if collision
+        if (isCollision) {
+          duckie.position.x = oldX;
+          duckie.position.y = oldY;
+          duckie.position.z = oldZ;
+          for (i = 0; i < spheres.length; i++) {
+            scene.remove(spheres[i]);
+          }
+          gameState = false;
+          var gameOverMessage = document.getElementById("game-over-message");
+          gameOverMessage.style.display = "block";
+        }
+      }
+    }
+    function createSphere() {
+      var geometry = new THREE.SphereGeometry(3, 32, 32);
+      var material = new THREE.MeshPhysicalMaterial({
+        metalness: 0,
+        roughness: 1,
+        clearcoat: 1,
+        transparent: true,
+        transmission: .5,
+        opacity: 1,
+        reflectivity: 0.2,
+        color: "white"
+      });
+      var sphere = new THREE.Mesh(geometry, material);
+
+      // Set initial position above the scene
+      sphere.position.set(
+        Math.random() * 20 - 10, // random x position
+        30,                      // initial height
+        Math.random() * 12  // random z position
+      );
+
+      // add boxes around these objects to the collider list
+      sceneColliders.push(new Collider(sphere, true));
+
+      // UNCOMMENT TO SHOW BOUNDING BOXES
+      let whelp = new THREE.BoxHelper(sphere, "blue");
+      whelp.update();
+      scene.add(whelp);
+
+      scene.add(sphere);
+      spheres.push(sphere);
+    }
+
+    // Render the scene. This is called for each frame of the animation.
+    function render(t) {
+      //console.log(t);
+      updateAnimation();
+      renderer.render(myscene, camera);
+      requestAnimationFrame(render);
+    }
+    // Check if the new position is within the desired range
+    function isValidPosition(newX, newY, newZ) {
+      // Define your desired range for x, y, and z coordinates
+      const minX = -10;
+      const maxX = 10;
+      const minY = -5;
+      const maxY = 20;
+      const minZ = 0;
+      const maxZ = 12;
+
+      return newX >= minX && newX <= maxX &&
+        newY >= minY && newY <= maxY &&
+        newZ >= minZ && newZ <= maxZ;
+    }
+
+
+    //----------------------------------------------------------------------------------
+
+    // The init() function is called by the onload event when the document has loaded.
+    function init() {
+      try {
+        canvas = document.getElementById("glcanvas");
+        renderer = new THREE.WebGLRenderer({canvas: canvas, antialias: true});
+      }
+      catch (e) {
+        document.getElementById("canvas-holder").innerHTML = "<h3><b>WebGL is not available.</b><h3>";
+        return;
+      }
+
+      // create world and render scene
+      createWorld();
+    }
+  </script>
+
+</head>
+
+<body onload="init()">
+  <p style="position: absolute; z-index: 1; color: white; left: 20;">
+    Click in window -- WASD to move duck around
+  </p>
+  <p id="game-over-message"
+    style="position: absolute; z-index: 1; color: white; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 40px; display: none;">
+    Game Over
+  </p>
+  <p id="game-points" style="position: absolute; z-index: 1; color: white; left: 20px; top: 40px;">
+    Game Points: <span id="points">0</span>
+  </p>
+  <div id="canvas-holder">
+    <canvas id="glcanvas" width="600" height="400"></canvas>
+  </div>
+</body>
+
+</html>
